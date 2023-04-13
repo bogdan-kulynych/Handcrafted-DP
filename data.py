@@ -279,7 +279,13 @@ def get_scattered_dataset(loader, scattering, device, data_size):
     return data
 
 
-def get_scattered_loader(loader, scattering, device, drop_last=False, sample_batches=False):
+def get_scattered_loader(
+        loader,
+        scattering,
+        device,
+        drop_last=False,
+        sample_batches=False,
+        generator=None):
     # pre-compute a scattering transform (if there is one) and return
     # a DataLoader
 
@@ -301,7 +307,8 @@ def get_scattered_loader(loader, scattering, device, drop_last=False, sample_bat
     if sample_batches:
         sampler = PoissonSampler(len(scatters), loader.batch_size)
         return torch.utils.data.DataLoader(data, batch_sampler=sampler,
-                                           num_workers=0, pin_memory=False)
+                                           num_workers=0, pin_memory=False,
+                                           generator=generator)
     else:
         shuffle = isinstance(loader.sampler, torch.utils.data.RandomSampler)
         return torch.utils.data.DataLoader(data,
@@ -309,4 +316,5 @@ def get_scattered_loader(loader, scattering, device, drop_last=False, sample_bat
                                            shuffle=shuffle,
                                            num_workers=0,
                                            pin_memory=False,
-                                           drop_last=drop_last)
+                                           drop_last=drop_last,
+                                           generator=generator)

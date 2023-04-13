@@ -132,3 +132,6 @@ dmypy.json
 figures/
 .DS_STORE
 .idea/
+
+bn_stats
+.data

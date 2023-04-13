@@ -1,6 +1,8 @@
+import random
 import argparse
 import os
 
+import numpy as np
 import torch
 import torch.nn as nn
 from opacus import PrivacyEngine
@@ -12,12 +14,18 @@ from dp_utils import ORDERS, get_privacy_spent, get_renyi_divergence, scatter_no
 from log import Logger
 
 
-def main(dataset, augment=False, use_scattering=False, size=None,
+
+
+def main(dataset, seed=0, augment=False, use_scattering=False, size=None,
          batch_size=2048, mini_batch_size=256, sample_batches=False,
          lr=1, optim="SGD", momentum=0.9, nesterov=False,
          noise_multiplier=1, max_grad_norm=0.1, epochs=100,
          input_norm=None, num_groups=None, bn_noise_multiplier=None,
          max_epsilon=None, logdir=None, early_stop=True):
+
+    random.seed(seed)
+    torch.manual_seed(seed)
+    np.random.seed(seed)
 
     logger = Logger(logdir)
     device = get_device()
@@ -40,11 +48,28 @@ def main(dataset, augment=False, use_scattering=False, size=None,
         assert n_acc_steps == 1
         assert not augment
 
+    # def seed_worker(worker_id):
+    #     worker_seed = worker_id
+    #     # worker_seed = torch.initial_seed() % 2**32
+    #     np.random.seed(worker_seed)
+    #     random.seed(worker_seed)
+
+    train_gen = torch.Generator()
+    train_gen.manual_seed(0)
+    test_gen = torch.Generator()
+    test_gen.manual_seed(0)
+
     train_loader = torch.utils.data.DataLoader(
-        train_data, batch_size=mini_batch_size, shuffle=True, num_workers=1, pin_memory=True)
+        train_data, batch_size=mini_batch_size, shuffle=True, num_workers=1, pin_memory=True,
+        # worker_init_fn=seed_worker,
+        generator=train_gen,
+    )
 
     test_loader = torch.utils.data.DataLoader(
-        test_data, batch_size=mini_batch_size, shuffle=False, num_workers=1, pin_memory=True)
+        test_data, batch_size=mini_batch_size, shuffle=False, num_workers=1, pin_memory=True,
+        # worker_init_fn=seed_worker,
+        generator=test_gen,
+    )
 
     rdp_norm = 0
     if input_norm == "BN":
@@ -70,12 +95,15 @@ def main(dataset, augment=False, use_scattering=False, size=None,
             model = nn.Sequential(scattering, model)
             train_loader = torch.utils.data.DataLoader(
                 train_data, batch_size=mini_batch_size, shuffle=True,
-                num_workers=1, pin_memory=True, drop_last=True)
+                num_workers=1, pin_memory=True, drop_last=True,
+                generator=train_gen)
     else:
         # pre-compute the scattering transform if necessery
         train_loader = get_scattered_loader(train_loader, scattering, device,
-                                            drop_last=True, sample_batches=sample_batches)
-        test_loader = get_scattered_loader(test_loader, scattering, device)
+                                            drop_last=True, sample_batches=sample_batches,
+                                            generator=train_gen)
+        test_loader = get_scattered_loader(test_loader, scattering, device,
+                                           generator=test_gen)
 
     print(f"model has {get_num_params(model)} parameters")
 
@@ -134,6 +162,7 @@ def main(dataset, augment=False, use_scattering=False, size=None,
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', choices=['cifar10', 'fmnist', 'mnist'])
+    parser.add_argument('--seed', default=0, type=int)
     parser.add_argument('--size', default=None)
     parser.add_argument('--augment', action="store_true")
     parser.add_argument('--use_scattering', action="store_true")
