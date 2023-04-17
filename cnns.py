@@ -1,7 +1,9 @@
+import pathlib
 import random
 import argparse
 import os
 
+import wandb
 import numpy as np
 import torch
 import torch.nn as nn
@@ -21,13 +23,35 @@ def main(dataset, seed=0, augment=False, use_scattering=False, size=None,
          lr=1, optim="SGD", momentum=0.9, nesterov=False,
          noise_multiplier=1, max_grad_norm=0.1, epochs=100,
          input_norm=None, num_groups=None, bn_noise_multiplier=None,
-         max_epsilon=None, logdir=None, early_stop=True):
+         max_epsilon=None, out_dir="out", early_stop=True):
 
     random.seed(seed)
     torch.manual_seed(seed)
     np.random.seed(seed)
 
-    logger = Logger(logdir)
+    # Log run.
+    run_name = f"cifar10_scatternet_{noise_multiplier}"
+    pathlib.Path(out_dir).mkdir(parents=True, exist_ok=True)
+    run_dir = pathlib.Path(out_dir) / run_name
+    checkpoint_filename = run_dir / f"model_{seed}"
+    run_params = {
+        "project": "multiplicities",
+        "job_type": "train",
+        "group": run_name,
+        "config": {
+            "name": run_name,
+            "out_path": checkpoint_filename,
+            "dataset": "cifar10",
+            "seed": seed,
+            "sigma": noise_multiplier,
+            "epochs": epochs,
+            "batch_size": batch_size,
+            "lr": lr,
+        },
+    }
+    run = wandb.init(**run_params, name=f"model_{seed}")
+
+    logger = Logger(run_dir)
     device = get_device()
 
     train_data, test_data = get_data(dataset, augment=augment)
@@ -70,6 +94,7 @@ def main(dataset, seed=0, augment=False, use_scattering=False, size=None,
         # worker_init_fn=seed_worker,
         generator=test_gen,
     )
+
 
     rdp_norm = 0
     if input_norm == "BN":
@@ -148,6 +173,17 @@ def main(dataset, seed=0, augment=False, use_scattering=False, size=None,
         logger.log_epoch(epoch, train_loss, train_acc, test_loss, test_acc, epsilon)
         logger.log_scalar("epsilon/train", epsilon, epoch)
 
+        run.log(
+            {
+                "epoch": epoch,
+                "train_loss": train_loss,
+                "train_acc": train_acc,
+                "test_loss": test_loss,
+                "test_acc": test_acc,
+                "epsilon": epsilon,
+            }
+        )
+
         # stop if we're not making progress
         if test_acc > best_acc:
             best_acc = test_acc
@@ -181,6 +217,6 @@ if __name__ == '__main__':
     parser.add_argument('--max_epsilon', type=float, default=None)
     parser.add_argument('--early_stop', action='store_false')
     parser.add_argument('--sample_batches', action="store_true")
-    parser.add_argument('--logdir', default=None)
+    parser.add_argument('--out_dir', default="out")
     args = parser.parse_args()
     main(**vars(args))
