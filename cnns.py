@@ -23,7 +23,7 @@ def main(dataset, seed=0, augment=False, use_scattering=False, size=None,
          lr=1, optim="SGD", momentum=0.9, nesterov=False,
          noise_multiplier=1, max_grad_norm=0.1, epochs=100,
          input_norm=None, num_groups=None, bn_noise_multiplier=None,
-         max_epsilon=None, out_dir="out", early_stop=True):
+         max_epsilon=None, out_dir="out", early_stop=True, device="cuda"):
 
     random.seed(seed)
     torch.manual_seed(seed)
@@ -52,7 +52,7 @@ def main(dataset, seed=0, augment=False, use_scattering=False, size=None,
     run = wandb.init(**run_params, name=f"model_{seed}")
 
     logger = Logger(run_dir)
-    device = get_device()
+    device = get_device(device)
 
     train_data, test_data = get_data(dataset, augment=augment)
 
@@ -218,5 +218,6 @@ if __name__ == '__main__':
     parser.add_argument('--early_stop', action='store_false')
     parser.add_argument('--sample_batches', action="store_true")
     parser.add_argument('--out_dir', default="out")
+    parser.add_argument('--device', default="cuda")
     args = parser.parse_args()
     main(**vars(args))

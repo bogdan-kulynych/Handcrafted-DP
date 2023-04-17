@@ -2,10 +2,10 @@ import torch
 import torch.nn.functional as F
 
 
-def get_device():
+def get_device(device_name="cuda"):
     use_cuda = torch.cuda.is_available()
     assert use_cuda
-    device = torch.device("cuda" if use_cuda else "cpu")
+    device = torch.device(device_name if use_cuda else "cpu")
     return device
 
 
