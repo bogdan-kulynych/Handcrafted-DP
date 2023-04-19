@@ -1,6 +1,7 @@
 import pathlib
 import random
 import argparse
+import shutil
 import os
 
 import wandb
@@ -13,12 +14,15 @@ from train_utils import get_device, train, test
 from data import get_data, get_scatter_transform, get_scattered_loader
 from models import CNNS, get_num_params
 from dp_utils import ORDERS, get_privacy_spent, get_renyi_divergence, scatter_normalization
-from log import Logger
 
 
+def save_checkpoint(state, is_best, filename="checkpoint.tar"):
+    torch.save(state, filename)
+    if is_best:
+        shutil.copyfile(filename, f"{filename}_best")
 
 
-def main(dataset, seed=0, augment=False, use_scattering=False, size=None,
+def main(dataset, seed=0, augment=False, use_scattering=True, size=None,
          batch_size=2048, mini_batch_size=256, sample_batches=False,
          lr=1, optim="SGD", momentum=0.9, nesterov=False,
          noise_multiplier=1, max_grad_norm=0.1, epochs=100,
@@ -31,8 +35,9 @@ def main(dataset, seed=0, augment=False, use_scattering=False, size=None,
 
     # Log run.
     run_name = f"cifar10_scatternet_{noise_multiplier}"
-    pathlib.Path(out_dir).mkdir(parents=True, exist_ok=True)
     run_dir = pathlib.Path(out_dir) / run_name
+    if not run_dir.is_dir():
+        run_dir.mkdir(parents=True)
     checkpoint_filename = run_dir / f"model_{seed}"
     run_params = {
         "project": "multiplicities",
@@ -51,9 +56,7 @@ def main(dataset, seed=0, augment=False, use_scattering=False, size=None,
     }
     run = wandb.init(**run_params, name=f"model_{seed}")
 
-    logger = Logger(run_dir)
     device = get_device(device)
-
     train_data, test_data = get_data(dataset, augment=augment)
 
     if use_scattering:
@@ -170,9 +173,6 @@ def main(dataset, seed=0, augment=False, use_scattering=False, size=None,
         else:
             epsilon = None
 
-        logger.log_epoch(epoch, train_loss, train_acc, test_loss, test_acc, epsilon)
-        logger.log_scalar("epsilon/train", epsilon, epoch)
-
         run.log(
             {
                 "epoch": epoch,
@@ -193,6 +193,19 @@ def main(dataset, seed=0, augment=False, use_scattering=False, size=None,
             if flat_count >= 20 and early_stop:
                 print("plateau...")
                 return
+
+        save_checkpoint(
+            {
+                "epoch": epoch + 1,
+                "model": "scatternet",
+                "state_dict": model.state_dict(),
+                "test_acc": test_acc,
+                "best_acc": best_acc,
+                "optimizer": optimizer.state_dict(),
+            },
+            is_best=True,
+            filename=checkpoint_filename,
+        )
 
 
 if __name__ == '__main__':
